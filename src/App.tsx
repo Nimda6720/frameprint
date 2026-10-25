@@ -87,7 +87,7 @@ function FilmPoster({
   const colors = ['poster-sage', 'poster-umber', 'poster-ruby', 'poster-ink', 'poster-teal', 'poster-violet'];
   const tint = colors[Math.abs([...film.title].reduce((a, c) => a + c.charCodeAt(0), 0)) % colors.length];
   return (
-    <button className={`poster ${tint} ${className}`} onClick={onClick} aria-label={`View ${film.title} details`}>
+    <button className={`poster ${tint} ${img ? 'poster-has-img' : ''} ${className}`} onClick={onClick} aria-label={`View ${film.title} details`}>
       {badge && <span className={`media-badge media-${badge.toLowerCase()}`}>{badge}</span>}
       {img ? (
         <img loading="lazy" src={img} alt={`${film.title} movie poster`} />
@@ -214,7 +214,7 @@ function PersonDetail({
           <X size={20} />
         </button>
         <div className="person-modal-header">
-          <div className="person-modal-avatar">
+          <div className="person-avatar person-modal-avatar">
             {person.profile ? (
               <img src={portraitImage(person.profile)!} alt={person.name} />
             ) : (

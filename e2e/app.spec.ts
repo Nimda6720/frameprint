@@ -26,6 +26,13 @@ test('demo navigation, charts, library filters and PNG download',async({page})=>
  await navigate(page,'Cast & crew');
  await page.locator('.person-card-interactive').first().click();
  await expect(page.getByRole('dialog')).toBeVisible();
+ const avatarBox=await page.locator('.person-modal-avatar').boundingBox();
+ const sectionBox=await page.locator('.person-modal-section').first().boundingBox();
+ expect(avatarBox).not.toBeNull();
+ expect(sectionBox).not.toBeNull();
+ expect(avatarBox!.width).toBeLessThanOrEqual(96);
+ expect(avatarBox!.height).toBeLessThanOrEqual(120);
+ expect(avatarBox!.y+avatarBox!.height).toBeLessThanOrEqual(sectionBox!.y+1);
  await page.keyboard.press('Escape');
  await expect(page.getByRole('dialog')).toHaveCount(0);
  for(const name of ['Cinematic DNA','Timeline','Your wrapped']){
