@@ -35,9 +35,23 @@ describe('safe browser imports',()=>{
     expect(merged.films[0].diaryDates).toEqual(['2025-02-14']);
     expect(merged.films[0].metadata?.runtime).toBe(116);
   });
-  test('supports nested Letterboxd likes/films.csv',async()=>{
-    const result=await importLetterboxd(await zipFile({'export/watched.csv':watched,'export/likes/films.csv':'Name,Year\nArrival,2016\n'}));
+  test('supports nested Letterboxd likes/films.csv and ignores deleted/orphaned/lists subfolders',async()=>{
+    const result=await importLetterboxd(await zipFile({
+      'export/watched.csv':watched,
+      'export/diary.csv':'Date,Name,Year,Watched Date\n2025-01-01,Arrival,2016,2025-01-01\n',
+      'export/deleted/diary.csv':'Date,Name,Year,Watched Date\n2025-01-01,Deleted Film,2020,2025-01-01\n',
+      'export/deleted/comments.csv':'Date,Content\n',
+      'export/deleted/reviews.csv':'Date,Name\n',
+      'export/orphaned/diary.csv':'Date,Name,Year,Watched Date\n2025-01-01,Orphaned Film,2020,2025-01-01\n',
+      'export/orphaned/comments.csv':'Date,Content\n',
+      'export/orphaned/reviews.csv':'Date,Name\n',
+      'export/likes/films.csv':'Name,Year\nArrival,2016\n',
+      'export/likes/lists.csv':'Date,Name\n',
+      'export/likes/reviews.csv':'Date,Name\n',
+    }));
+    expect(result.films).toHaveLength(1);
     expect(result.films[0].liked).toBe(true);
+    expect(result.films[0].diaryDates).toEqual(['2025-01-01']);
   });
   test('rejects multiple exports with conflicting CSV names',async()=>{
     await expect(importLetterboxd(await zipFile({'one/watched.csv':watched,'two/watched.csv':watched}))).rejects.toThrow(/multiple/);

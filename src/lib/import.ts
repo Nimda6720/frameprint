@@ -10,6 +10,12 @@ const numberYear = (x: unknown): number | null => {
   return Number.isInteger(n) && n >= 1870 && n <= 2100 ? n : null;
 };
 const clean = (x: unknown) => String(x ?? '').trim();
+function isIgnoredExportPath(path: string): boolean {
+  const norm = path.replace(/\\/g, '/');
+  if (/(^|\/)(__macosx|deleted|orphaned|lists)\//i.test(norm)) return true;
+  if (/(^|\/)likes\/(?!films\.csv$)/i.test(norm)) return true;
+  return false;
+}
 export const filmKey = (title: string, year: number | null) =>
   `${title.normalize('NFKC').toLowerCase().replace(/\s+/gu, ' ').trim()}|${year ?? ''}`;
 function parseRating(value: string): number | null {
@@ -32,10 +38,10 @@ function rows(csv: string): Record<string, string>[] {
 export function importCsvFiles(files: Record<string, string>): ImportResult {
   const films = new Map<string, Film>();
   const warnings: string[] = [];
-  const names = Object.keys(files);
+  const names = Object.keys(files).filter(n => !isIgnoredExportPath(n));
   let watchlistCount = 0;
   let processed = 0;
-  const find = (name: string) => names.find(n => n.split('/').at(-1)?.toLowerCase() === name);
+  const find = (name: string) => names.find(n => n.replace(/\\/g, '/').split('/').at(-1)?.toLowerCase() === name);
   const get = (name: string) => {
     const filename = find(name);
     return filename ? rows(files[filename]) : [];
@@ -154,8 +160,9 @@ export async function importLetterboxd(input: File | File[]): Promise<ImportResu
     const selected: Record<string, string> = {};
     let total = 0;
     for (const item of Object.values(zip.files)) {
-      if (item.dir || item.name.startsWith('__MACOSX/')) continue;
-      const filename = /(^|\/)likes\/films\.csv$/i.test(item.name) ? 'likes.csv' : item.name.split('/').at(-1)?.toLowerCase();
+      const normalizedName = item.name.replace(/\\/g, '/');
+      if (item.dir || isIgnoredExportPath(normalizedName)) continue;
+      const filename = /(^|\/)likes\/films\.csv$/i.test(normalizedName) ? 'likes.csv' : normalizedName.split('/').at(-1)?.toLowerCase();
       if (!filename || !['watched.csv', 'ratings.csv', 'diary.csv', 'likes.csv', 'watchlist.csv'].includes(filename)) continue;
       const bytes = (item as JSZip.JSZipObject & { _data?: { uncompressedSize?: number } })._data?.uncompressedSize;
       if (bytes && bytes > MAX_CSV_BYTES) throw new Error(`${filename} is too large.`);

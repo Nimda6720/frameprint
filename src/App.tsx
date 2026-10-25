@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
- Activity, ArrowDownToLine, ArrowRight, CalendarDays, ChevronDown,
+ Activity, ArrowDownToLine, ArrowRight, BookOpen, CalendarDays, ChevronDown,
  Clapperboard, Compass, Database, Download, ExternalLink, Film as FilmIcon, FolderOpen,
- Heart, Info, LayoutDashboard, Menu, Pause, Play, Search, ShieldCheck,
- SlidersHorizontal, Sparkles, Star, Tv, UploadCloud, Users, X
+ Heart, Info, LayoutDashboard, Menu, Moon, Music, Pause, Play, Search, ShieldCheck,
+ SlidersHorizontal, Sparkles, Star, Timer, UploadCloud, Users, X
 } from 'lucide-react';
-import type { DiscoveryItem, Film, FilmMeta, ImportResult, Screen } from './lib/types';
+import type { Film, FilmMeta, ImportResult, Screen } from './lib/types';
 import type { PeopleCategory } from './lib/stats';
 import { importInWorker } from './lib/import-client';
 import { mergeImportResults } from './lib/import';
-import { demoDiscovery, demoFilms } from './data/demo';
+import { demoFilms } from './data/demo';
 import { collaborations, getStats, minutesToLabel, prettyNumber, rankCountries, rankGenres, rankLanguages, rankPeople } from './lib/stats';
-import { enrichBatch, fetchMediaDetails, fetchTrending, hasApi, searchTmdb, waitFor } from './lib/enrich';
+import { enrichBatch, hasApi, waitFor } from './lib/enrich';
 import { FilmArea, FilmBars, VerticalBars } from './components/Charts';
 
 const movieImage = (path:string|null|undefined, size:'w185'|'w342'|'w500'|'w780'='w342') => path ? `https://image.tmdb.org/t/p/${size}${path}` : null;
@@ -20,7 +20,6 @@ const fRating = (n:number|null) => n === null ? '—' : `${Number(n.toFixed(2))}
 const percent = (n:number, total:number) => total ? Math.round(n/total*100) : 0;
 const features = [
  {id:'overview',label:'Overview',icon:LayoutDashboard},
- {id:'discover',label:'Discover',icon:Tv},
  {id:'library',label:'Film library',icon:FilmIcon},
  {id:'people',label:'Cast & crew',icon:Users},
  {id:'dna',label:'Cinematic DNA',icon:Compass},
@@ -29,7 +28,6 @@ const features = [
 ] as const;
 const sections:Record<Screen,string> = {
  overview:'The big picture',
- discover:'Movies & TV discovery',
  library:'Your film archive',
  people:'Behind the frames',
  dna:'The stories you gravitate to',
@@ -85,7 +83,7 @@ function FilmDetail({film,onClose}:{film:Film;onClose:()=>void}) {
 function StatCard({label,value,note,icon:Icon,accent=false}:{label:string;value:string;note:string;icon:typeof FilmIcon;accent?:boolean}) {
  return <div className={`stat-card ${accent?'stat-accent':''}`}><div className="stat-top"><span>{label}</span><Icon size={18}/></div><div className="stat-value">{value}</div><p>{note}</p></div>;
 }
-function Overview({films,onFilm,openUpload,onDiscover,demo,watchlist}:{films:Film[];onFilm:(f:Film)=>void;openUpload:()=>void;onDiscover:()=>void;demo:boolean;watchlist:number}) {
+function Overview({films,onFilm,openUpload,demo,watchlist}:{films:Film[];onFilm:(f:Film)=>void;openUpload:()=>void;demo:boolean;watchlist:number}) {
  const stats = useMemo(()=>getStats(films),[films]);
  const favorites = stats.sortedFavorites.slice(0,6);
  const allGenres=rankGenres(films);
@@ -93,13 +91,21 @@ function Overview({films,onFilm,openUpload,onDiscover,demo,watchlist}:{films:Fil
  const directorTotal=directors.reduce((a,b)=>a+b.count,0);
  const releaseDecades=stats.decades.slice(-7);
  const hasDated = stats.diaryEntries > 0;
+ const booksUnread = Math.round(stats.knownRuntime / 300);
+ const toiletBreaks = Math.round(stats.knownRuntime / 5);
+ const songsUnheard = Math.round(stats.knownRuntime / 3.5);
+ const nightsOfSleep = Math.round(stats.knownRuntime / 480);
  return <>
- <div className="hero"><div className="hero-text"><div className="hero-kicker"><span className="live-dot"/> YOUR CINEMATIC UNIVERSE <span className="hero-line"/></div><h1>Every film tells<br/>a little <em>about you.</em></h1><p>A beautifully detailed portrait of everything you've watched, loved, and rated—plus live TMDB movie and TV discovery.</p><div className="hero-actions"><button className="primary-btn" onClick={openUpload}><UploadCloud size={17}/> {demo?'Analyze your Letterboxd':'Import another export'} <ArrowRight size={16}/></button><button className="soft-btn" onClick={onDiscover}><Tv size={16}/> Explore Movies & TV</button><span className="hero-privacy"><ShieldCheck size={15}/> ZIP stays in your browser</span></div></div>
- <div className="hero-art" aria-hidden="true"><div className="orb orb-one"/><div className="orb orb-two"/><div className="hero-art-text">FRAME<br/><i>BY</i> FRAME<span>EST. YOUR FIRST WATCH</span></div><div className="corner-number">01 / 07</div></div></div>
+ <div className="hero"><div className="hero-text"><div className="hero-kicker"><span className="live-dot"/> YOUR CINEMATIC UNIVERSE <span className="hero-line"/></div><h1>Every film tells<br/>a little <em>about you.</em></h1><p>A beautifully detailed portrait of everything you've watched, loved, and rated.</p><div className="hero-actions"><button className="primary-btn" onClick={openUpload}><UploadCloud size={17}/> {demo?'Analyze your Letterboxd':'Import another export'} <ArrowRight size={16}/></button><span className="hero-privacy"><ShieldCheck size={15}/> ZIP stays in your browser</span></div></div>
+ <div className="hero-art" aria-hidden="true"><div className="orb orb-one"/><div className="orb orb-two"/><div className="hero-art-text">FRAME<br/><i>BY</i> FRAME<span>EST. YOUR FIRST WATCH</span></div><div className="corner-number">01 / 06</div></div></div>
  <SectionHeading eyebrow="01 / AT A GLANCE" title="Your story in numbers" description="A few numbers that say a lot about your taste." side={<TinyTag accent>{demo?'SAMPLE ACCOUNT':'YOUR IMPORT'}</TinyTag>}/>
  <div className="stats-grid"><StatCard label="Films watched" value={prettyNumber(stats.total)} note="Unique titles in your library" icon={Clapperboard} accent/>
  <StatCard label="Average rating" value={stats.avgRating===null?'—':stats.avgRating.toFixed(2)+' ★'} note={`Across ${prettyNumber(stats.rated)} rated films`} icon={Star}/>
  <StatCard label="Known screen time" value={minutesToLabel(stats.knownRuntime)} note={`${stats.runtimeCount} of ${stats.total} runtimes known; includes diary repeats`} icon={Activity}/>
+ <StatCard label="Books unread" value={prettyNumber(booksUnread)} note="300-page novels you could have finished (~5h each)" icon={BookOpen}/>
+ <StatCard label="Toilet breaks" value={prettyNumber(toiletBreaks)} note="5-minute bathroom trips spent watching movies" icon={Timer}/>
+ <StatCard label="Songs unheard" value={prettyNumber(songsUnheard)} note="3.5-minute tracks that went unplayed" icon={Music}/>
+ <StatCard label="Nights of sleep" value={prettyNumber(nightsOfSleep)} note="Full 8-hour nights traded for cinema" icon={Moon}/>
  <StatCard label="Diary watches" value={prettyNumber(stats.diaryEntries)} note={`${prettyNumber(watchlist)} films in watchlist`} icon={CalendarDays}/></div>
  <div className="grid-two">
   <div className="panel"><div className="panel-head"><div><div className="eyebrow">YOUR TASTE, VISUALIZED</div><h3>Ratings distribution</h3></div><TinyTag>{stats.rated} rated</TinyTag></div><FilmBars data={stats.ratingCounts.map(d=>({name:d.rating,count:d.count}))}/><p className="fine-print">Your Letterboxd ratings, not TMDB community scores.</p></div>
@@ -114,175 +120,6 @@ function Overview({films,onFilm,openUpload,onDiscover,demo,watchlist}:{films:Fil
 }
 function EmptyState({label}:{label:string}){return <div className="empty-state"><Database size={20}/><span>{label}</span></div>}
 
-function Discover({onSelectFilm}:{onSelectFilm:(f:Film)=>void}) {
- const [mediaFilter,setMediaFilter]=useState<'all'|'movie'|'tv'>('all');
- const [timeWindow,setTimeWindow]=useState<'week'|'day'>('week');
- const [query,setQuery]=useState('');
- const [genreFilter,setGenreFilter]=useState('All genres');
- const [items,setItems]=useState<DiscoveryItem[]>(demoDiscovery);
- const [loading,setLoading]=useState(false);
- const [liveSource,setLiveSource]=useState(false);
- const detailCache=useRef(new Map<string,FilmMeta>());
-
- useEffect(()=>{
-  const trimmed=query.trim();
-  const controller=new AbortController();
-  if(!hasApi){
-   const basePool=demoDiscovery.filter(item=>
-    (mediaFilter==='all'||item.mediaType===mediaFilter)&&
-    (!trimmed||item.title.toLowerCase().includes(trimmed.toLowerCase())||item.overview.toLowerCase().includes(trimmed.toLowerCase()))
-   );
-   setItems(basePool);
-   setLiveSource(false);
-   return ()=>controller.abort();
-  }
-  const timer=setTimeout(async()=>{
-   setLoading(true);
-   try{
-    const remote=trimmed
-     ? await searchTmdb(trimmed, mediaFilter==='all'?'multi':mediaFilter, controller.signal)
-     : await fetchTrending(mediaFilter, timeWindow, controller.signal);
-    if(!controller.signal.aborted){
-     if(remote.length){
-      const merged=trimmed?remote:[...remote,...demoDiscovery.filter(d=>!remote.some(r=>r.id===d.id&&r.mediaType===d.mediaType))];
-      setItems(merged);
-      setLiveSource(true);
-     }else{
-      const fallback=demoDiscovery.filter(item=>
-       (mediaFilter==='all'||item.mediaType===mediaFilter)&&
-       (!trimmed||item.title.toLowerCase().includes(trimmed.toLowerCase()))
-      );
-      setItems(fallback);
-      setLiveSource(false);
-     }
-    }
-   }catch{
-    if(!controller.signal.aborted){
-     const fallback=demoDiscovery.filter(item=>
-      (mediaFilter==='all'||item.mediaType===mediaFilter)&&
-      (!trimmed||item.title.toLowerCase().includes(trimmed.toLowerCase()))
-     );
-     setItems(fallback);
-     setLiveSource(false);
-    }
-   }finally{
-    if(!controller.signal.aborted)setLoading(false);
-   }
-  }, trimmed ? 260 : 0);
-  return ()=>{clearTimeout(timer);controller.abort();};
- },[mediaFilter,timeWindow,query]);
-
- const allGenres=useMemo(()=>{
-  const set=new Set<string>();
-  for(const item of items)for(const g of item.genres)set.add(g);
-  return ['All genres',...Array.from(set).sort()];
- },[items]);
-
- const visibleItems=useMemo(()=>items.filter(item=>
-  (mediaFilter==='all'||item.mediaType===mediaFilter)&&
-  (genreFilter==='All genres'||item.genres.includes(genreFilter))
- ),[items,mediaFilter,genreFilter]);
-
- const openDiscoveryItem=async(item:DiscoveryItem)=>{
-  const cacheKey=`${item.mediaType}:${item.id}`;
-  const existing=item.metadata||detailCache.current.get(cacheKey);
-  const initialMeta:FilmMeta=existing||{
-   id:item.id,title:item.title,year:item.year,poster:item.poster,backdrop:item.backdrop,
-   overview:item.overview,runtime:null,genres:item.genres,countries:[],language:item.language,
-   cast:[],directors:[],writers:[],cinematographers:[],composers:[],tmdbRating:item.tmdbRating,
-   mediaType:item.mediaType
-  };
-  const asFilm:Film={
-   key:`discover|${item.mediaType}|${item.id}`,
-   title:item.title,year:item.year,rating:null,liked:false,rewatches:0,diaryDates:[],metadata:initialMeta
-  };
-  onSelectFilm(asFilm);
-  if(!existing&&hasApi){
-   try{
-    const full=await fetchMediaDetails(item.mediaType,item.id);
-    if(full){
-     detailCache.current.set(cacheKey,full);
-     onSelectFilm({...asFilm,metadata:full});
-    }
-   }catch{
-    // Keep initial discovery metadata on network failure.
-   }
-  }
- };
-
- const spotlight=visibleItems[0];
- const backdropUrl=movieImage(spotlight?.backdrop||spotlight?.poster,'w780');
-
- return <>
-  <SectionHeading
-   eyebrow="02 / MOVIE & TV DISCOVERY"
-   title="Trending across cinema & television"
-   description="Search movies and TV series worldwide, explore trending releases, and inspect full TMDB cast, crew, and ratings."
-   side={<TinyTag accent>{liveSource?'LIVE TMDB FEED':`${visibleItems.length} TITLES`}</TinyTag>}
-  />
-  {spotlight&&<div className="discover-spotlight" style={backdropUrl?{backgroundImage:`linear-gradient(95deg, rgba(11,18,22,0.96) 35%, rgba(16,28,33,0.78) 100%), url(${backdropUrl})`}:undefined}>
-   <div className="discover-spotlight-copy">
-    <div className="discover-badges">
-     <TinyTag accent>{spotlight.mediaType==='tv'?'TRENDING TV SERIES':'TRENDING FILM'}</TinyTag>
-     {spotlight.year&&<TinyTag>{spotlight.year}</TinyTag>}
-     {spotlight.tmdbRating!==null&&<TinyTag>TMDB {spotlight.tmdbRating.toFixed(1)} ★</TinyTag>}
-    </div>
-    <h3>{spotlight.title}</h3>
-    <p>{spotlight.overview||'Explore cast, crew, release details, and ratings via TMDB.'}</p>
-    <div className="discover-spotlight-meta">
-     {spotlight.genres.slice(0,4).map(g=><span key={g} className="discover-genre-chip">{g}</span>)}
-    </div>
-    <div className="discover-spotlight-actions">
-     <button className="primary-btn" onClick={()=>void openDiscoveryItem(spotlight)}>View full details <ArrowRight size={15}/></button>
-    </div>
-   </div>
-  </div>}
-  <div className="discover-controls">
-   <div className="category-tabs discover-tabs" role="tablist" aria-label="Media type filter">
-    <button className={mediaFilter==='all'?'active':''} onClick={()=>setMediaFilter('all')}>All Trending</button>
-    <button className={mediaFilter==='movie'?'active':''} onClick={()=>setMediaFilter('movie')}>Movies</button>
-    <button className={mediaFilter==='tv'?'active':''} onClick={()=>setMediaFilter('tv')}>TV Series</button>
-   </div>
-   <div className="discover-window">
-    <button className={`soft-btn btn-small ${timeWindow==='week'?'window-active':''}`} onClick={()=>setTimeWindow('week')}>This Week</button>
-    <button className={`soft-btn btn-small ${timeWindow==='day'?'window-active':''}`} onClick={()=>setTimeWindow('day')}>Today</button>
-   </div>
-  </div>
-  <div className="filters">
-   <label className="filter-search">
-    <Search size={16}/>
-    <input value={query} onChange={e=>setQuery(e.target.value)} aria-label="Search movies and TV" placeholder="Search any movie or TV series on TMDB..."/>
-    {query&&<button className="icon-btn" onClick={()=>setQuery('')} aria-label="Clear search"><X size={14}/></button>}
-   </label>
-   <div className="filter-select">
-    <SlidersHorizontal size={15}/>
-    <select aria-label="Filter discovery by genre" value={genreFilter} onChange={e=>setGenreFilter(e.target.value)}>
-     {allGenres.map(g=><option key={g}>{g}</option>)}
-    </select>
-    <ChevronDown size={13}/>
-   </div>
-  </div>
-  {loading&&<div className="notice"><Sparkles size={16}/><span>Searching TMDB catalog…</span></div>}
-  {visibleItems.length ? (
-   <div className="library-grid">
-    {visibleItems.map(item=>(
-     <div className="library-item" key={`${item.mediaType}-${item.id}`}>
-      <FilmPoster
-       film={{title:item.title,year:item.year,metadata:{poster:item.poster}}}
-       badge={item.mediaType==='tv'?'TV':'MOVIE'}
-       onClick={()=>void openDiscoveryItem(item)}
-      />
-      <strong>{item.title}</strong>
-      <div>{item.year ?? 'TBA'} <SmallStars rating={item.tmdbRating} scale={10}/></div>
-     </div>
-    ))}
-   </div>
-  ) : (
-   <EmptyState label="No movies or TV series match your search."/>
-  )}
- </>
-}
-
 function Library({films,onFilm}:{films:Film[];onFilm:(f:Film)=>void}) {
  const [visible,setVisible]=useState(72);
  const [term,setTerm]=useState(''); const [sort,setSort]=useState('rating'); const [genre,setGenre]=useState('All genres'); const [rating,setRating]=useState('All ratings');
@@ -292,7 +129,7 @@ function Library({films,onFilm}:{films:Film[];onFilm:(f:Film)=>void}) {
  if(sort==='newest')return (b.year||0)-(a.year||0);if(sort==='oldest')return (a.year||0)-(b.year||0);if(sort==='title')return a.title.localeCompare(b.title);
  return (b.rating??-1)-(a.rating??-1)||a.title.localeCompare(b.title);
  });
- return <><SectionHeading eyebrow="03 / THE ARCHIVE" title="Every frame you collected" description="Search, sort, and rediscover the films that make up your story." side={<TinyTag accent>{filtered.length} FILMS</TinyTag>}/>
+ return <><SectionHeading eyebrow="02 / THE ARCHIVE" title="Every frame you collected" description="Search, sort, and rediscover the films that make up your story." side={<TinyTag accent>{filtered.length} FILMS</TinyTag>}/>
  <div className="filters"><label className="filter-search"><Search size={16}/><input value={term} onChange={e=>setTerm(e.target.value)} aria-label="Search films" placeholder="Find a film..."/></label>
  <div className="filter-select"><SlidersHorizontal size={15}/><select aria-label="Filter by genre" value={genre} onChange={e=>setGenre(e.target.value)}>{genres.map(g=><option key={g}>{g}</option>)}</select><ChevronDown size={13}/></div>
  <div className="filter-select"><Star size={14}/><select aria-label="Filter by rating" value={rating} onChange={e=>setRating(e.target.value)}><option>All ratings</option><option value="4.5">4.5+ stars</option><option value="4">4+ stars</option><option value="3">3+ stars</option><option>Unrated</option></select><ChevronDown size={13}/></div>
@@ -305,7 +142,7 @@ function People({films}:{films:Film[]}) {
  const items=useMemo(()=>rankPeople(films,category),[films,category]);
  const unique=items.length; const one=items.filter(x=>x.count===1).length;
  const collabs=useMemo(()=>collaborations(films),[films]);
- return <><SectionHeading eyebrow="04 / THE PEOPLE" title="The people behind your taste" description="The filmmakers and performers you keep coming back to." side={<TinyTag accent>{films.filter(f=>f.metadata).length} FILMS ANALYZYZED</TinyTag>}/>
+ return <><SectionHeading eyebrow="03 / THE PEOPLE" title="The people behind your taste" description="The filmmakers and performers you keep coming back to." side={<TinyTag accent>{films.filter(f=>f.metadata).length} FILMS ANALYZED</TinyTag>}/>
  <div className="category-tabs">{(Object.keys(label) as PeopleCategory[]).map(cat=><button key={cat} className={category===cat?'active':''} onClick={()=>setCategory(cat)}>{label[cat]}</button>)}</div>
  <div className="people-stats"><div><span>UNIQUE {label[category].toUpperCase()}</span><strong>{unique}</strong><small>Across enriched films</small></div><div><span>ONE-FILM SHARE</span><strong>{unique?Math.round(one/unique*100):0}%</strong><small>People seen in only one film</small></div><div><span>TOP REPEAT</span><strong>{items[0]?.count??0}</strong><small>Movies with the top {category==='cast'?'performer':'creator'}</small></div></div>
  {items.length?<div className="people-grid">{items.slice(0,24).map((item,index)=><div className="person-card" key={`${item.id}-${item.name}`}><div className="person-avatar">{item.profile?<img src={portraitImage(item.profile)!} loading="lazy" alt=""/>:<span>{item.name.split(' ').map(n=>n[0]).slice(0,2).join('')}</span>}</div><div className="person-copy"><span className="rank-label">#{String(index+1).padStart(2,'0')} · {item.count} FILM{item.count!==1?'S':''}</span><h4>{item.name}</h4><div className="person-rating">{item.average===null?'Not rated':`${item.average.toFixed(2)} ★ average`}</div><p title={item.films.join(', ')}>{item.films.slice(0,3).join(' · ')}</p></div></div>)}</div>:<EmptyState label="People rankings appear when film metadata has been loaded."/>}
@@ -316,7 +153,7 @@ function DNA({films}:{films:Film[]}) {
  const genres=rankGenres(films);const countries=rankCountries(films);const languages=rankLanguages(films);
  const known=films.filter(f=>f.metadata).length;const stats=getStats(films);
  const top=genres[0];
- return <><SectionHeading eyebrow="05 / CINEMATIC DNA" title="Your taste, decoded" description="Every genre, language and era leaves a mark on the way you watch." side={<TinyTag accent>{percent(known,films.length)}% COVERAGE</TinyTag>}/>
+ return <><SectionHeading eyebrow="04 / CINEMATIC DNA" title="Your taste, decoded" description="Every genre, language and era leaves a mark on the way you watch." side={<TinyTag accent>{percent(known,films.length)}% COVERAGE</TinyTag>}/>
  <div className="dna-feature"><div className="eyebrow">YOUR SIGNATURE GENRE</div><div className="dna-feature-row"><div><h2>{top?.name??'Still a mystery'}</h2><p>{top?`${top.count} of ${known} enriched films explore this genre. The pattern says something about what draws you in.`:'Movie metadata will reveal your signature genre.'}</p></div><div className="dna-big-number">{top?.percent??'—'}<span>{top?'%':''}</span></div></div><div className="dna-grain"/></div>
  <div className="grid-two"><div className="panel"><div className="panel-head"><div><div className="eyebrow">GENRE AFFINITIES</div><h3>The stories you choose</h3></div></div>{genres.length?<VerticalBars data={genres.slice(0,9).map(g=>({name:g.name,count:g.count}))}/>:<EmptyState label="TMDB enrichment needed."/>}<p className="fine-print">One film can belong to multiple genres.</p></div>
  <div className="panel"><div className="panel-head"><div><div className="eyebrow">BORDERS & BEYOND</div><h3>Countries of production</h3></div></div>{countries.length?<VerticalBars data={countries.slice(0,9).map(g=>({name:g.name,count:g.count}))}/>:<EmptyState label="TMDB enrichment needed."/>}<p className="fine-print">Co-productions appear under each country.</p></div></div>
@@ -330,7 +167,7 @@ function Timeline({films}:{films:Film[]}) {
  const years=stats.viewingYears;
  const month=stats.viewingMonths.slice(-18);
  const total=stats.diaryEntries;
- return <><SectionHeading eyebrow="06 / THE TIMELINE" title="When films became memories" description="A history of what you logged watching, one diary entry at a time." side={<TinyTag accent>{total} DATED WATCHES</TinyTag>}/>
+ return <><SectionHeading eyebrow="05 / THE TIMELINE" title="When films became memories" description="A history of what you logged watching, one diary entry at a time." side={<TinyTag accent>{total} DATED WATCHES</TinyTag>}/>
  <div className="timeline-banner"><div><span className="eyebrow">LOGGED VIEWINGS</span><h2>{prettyNumber(total)} <span>movie moments</span></h2><p>Only entries with a valid “Watched Date” count here. Simply marking a film as watched does not imply when it was viewed.</p></div><CalendarDays size={72} strokeWidth={1}/></div>
  <div className="grid-two"><div className="panel"><div className="panel-head"><div><div className="eyebrow">YEAR OVER YEAR</div><h3>Your viewing years</h3></div></div><FilmArea data={years} height={260}/></div>
  <div className="panel"><div className="panel-head"><div><div className="eyebrow">RECENT VIEWING HISTORY</div><h3>Monthly rhythm</h3></div></div><FilmArea data={month} height={260} color="#82c2b4"/></div></div>
@@ -360,7 +197,7 @@ function Wrapped({films,demo}:{films:Film[];demo:boolean}) {
   ctx.fillStyle='#d5ef76';ctx.font='26px sans-serif';ctx.fillText(`TOP DIRECTOR  ${directors[0]?.name||'N/A'}`,70,1215,930);
   const a=document.createElement('a');a.download='my-frameprint.png';a.href=canvas.toDataURL('image/png');a.click();
  };
- return <><SectionHeading eyebrow="07 / YOUR FRAMEPRINT" title="A little bit of movie magic" description="A snapshot of your watching personality, ready to share." side={<TinyTag accent>{demo?'PREVIEW MODE':'MADE FROM YOUR DATA'}</TinyTag>}/>
+ return <><SectionHeading eyebrow="06 / YOUR FRAMEPRINT" title="A little bit of movie magic" description="A snapshot of your watching personality, ready to share." side={<TinyTag accent>{demo?'PREVIEW MODE':'MADE FROM YOUR DATA'}</TinyTag>}/>
  <div className="wrapped-layout"><div className="wrapped-card"><div className="wrapped-orbit"/><div className="wrapped-header"><span><Clapperboard size={19}/> FRAMEPRINT</span><small>MY CINEMATIC DNA</small></div><div className="wrapped-main"><div className="eyebrow">A PORTRAIT IN FRAMES</div><h2>Every film<br/>tells <em>my story.</em></h2><p>Here's what the movies say about me.</p></div>
  <div className="wrapped-metrics"><div><strong>{stats.total}</strong><span>FILMS WATCHED</span></div><div><strong>{stats.avgRating?.toFixed(2)??'—'}<small>★</small></strong><span>AVERAGE RATING</span></div></div>
  <div className="wrapped-footer"><div><span>MY TOP GENRE</span><strong>{genres[0]?.name||'Unknown'}</strong></div><div><span>DIRECTOR OF MY LIFE</span><strong>{directors[0]?.name||'Unknown'}</strong></div></div><span className="wrapped-bottom">A cinematic fingerprint, uniquely yours. ◈</span></div>
@@ -506,18 +343,17 @@ export default function App(){
   <div className="main-area"><header className="topbar"><div className="topbar-left"><button className="mobile-menu icon-btn" onClick={()=>setNavOpen(true)} aria-label="Open navigation"><Menu size={21}/></button><span className="breadcrumbs">YOUR FRAMEPRINT <span>/</span> {sections[screen].toUpperCase()}</span></div><div className="topbar-right"><div className={`status-pill ${demo?'status-demo':'status-live'}`}><span className="live-dot"/>{demo?'DEMO DATA':'PERSONAL LIBRARY'}</div><button className="icon-btn topbar-download" title="Download analysis JSON" aria-label="Download analysis" onClick={downloadData}><Download size={18}/></button><button aria-label="Import data" className="topbar-import" onClick={()=>setUploadOpen(true)}><UploadCloud size={16}/><span>Import data</span></button></div></header>
    <main className="content">
     {error&&<div role="alert" className="notice error-notice"><Info size={17}/><span>{error}</span><button onClick={()=>setError(null)} aria-label="Dismiss error"><X size={16}/></button></div>}
-    {demo&&screen!=='overview'&&screen!=='discover'&&<div className="demo-note"><Sparkles size={16}/> You're exploring a fictional sample library. <button onClick={()=>setUploadOpen(true)}>Upload your own export <ArrowRight size={14}/></button></div>}
+    {demo&&screen!=='overview'&&<div className="demo-note"><Sparkles size={16}/> You're exploring a fictional sample library. <button onClick={()=>setUploadOpen(true)}>Upload your own export <ArrowRight size={14}/></button></div>}
     {!demo&&!hasApi&&<div className="notice"><Info size={17}/> Your import is ready. Movie details are temporarily unavailable; your ratings, library and diary statistics still work.</div>}
     {!demo&&hasApi&&(enrich.running||remaining>0)&&<div className="enrich-banner"><div className="enrich-info"><span className="enrich-dot"/><div><strong>{enrich.running?'Enriching your movie library…':`${remaining} films still need metadata`}</strong><p>{enrich.running?`${enrich.done} of ${enrich.total} films in this pass · ${stats.metadataCount} of ${films.length} enriched overall`:'Continue loading movie details. Titles without a confident match are left unmatched.'}</p></div></div><div className="enrich-controls">{enrich.running?<><div className="progress-track"><span style={{width:`${percent(enrich.done,enrich.total)}%`}}/></div><button className="soft-btn btn-small" onClick={()=>{aborter.current?.abort();setEnrich(old=>({...old,running:false}))}}><Pause size={13}/> Pause</button></>:<button className="soft-btn btn-small" onClick={()=>{setError(null);void runEnrich(filmsRef.current)}}><Play size={13}/> Continue enrichment</button>}</div></div>}
     {!demo&&warnings.length>0&&<details className="warning-details"><summary>{warnings.length} import note{warnings.length>1?'s':''} <ChevronDown size={14}/></summary><ul>{warnings.map(w=><li key={w}>{w}</li>)}</ul></details>}
-    {screen==='overview'&&<Overview films={films} onFilm={setSelected} openUpload={()=>setUploadOpen(true)} onDiscover={()=>navigate('discover')} demo={demo} watchlist={watchlistCount}/>}
-    {screen==='discover'&&<Discover onSelectFilm={setSelected}/>}
+    {screen==='overview'&&<Overview films={films} onFilm={setSelected} openUpload={()=>setUploadOpen(true)} demo={demo} watchlist={watchlistCount}/>}
     {screen==='library'&&<Library films={films} onFilm={setSelected}/>}
     {screen==='people'&&<People films={films}/>}
     {screen==='dna'&&<DNA films={films}/>}
     {screen==='timeline'&&<Timeline films={films}/>}
     {screen==='wrapped'&&<Wrapped films={films} demo={demo}/>}
-    <footer className="footer"><div className="footer-logo"><Clapperboard size={17}/> frameprint <span>© {new Date().getFullYear()}</span></div><div className="footer-links"><button onClick={resetDemo}>Explore sample</button><button onClick={()=>navigate('discover')}>Discover Movies & TV</button><button onClick={downloadData}>Export JSON</button><a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB <ExternalLink size={12}/></a></div><p className="tmdb-credit"><a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer" aria-label="Visit TMDB"><img width="93" height="25" alt="TMDB logo" src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_long_2-9665a76b1ae401a510ec1e0ca40ddcb3b0cfe45f1d51b77a308fea0845885648.svg" /></a><span>This product uses the TMDB API but is not endorsed or certified by TMDB. Movie metadata and imagery: <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">The Movie Database</a>.</span></p></footer>
+    <footer className="footer"><div className="footer-logo"><Clapperboard size={17}/> frameprint <span>© {new Date().getFullYear()}</span></div><div className="footer-links"><button onClick={resetDemo}>Explore sample</button><button onClick={downloadData}>Export JSON</button><a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB <ExternalLink size={12}/></a></div><p className="tmdb-credit"><a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer" aria-label="Visit TMDB"><img width="93" height="25" alt="TMDB logo" src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_long_2-9665a76b1ae401a510ec1e0ca40ddcb3b0cfe45f1d51b77a308fea0845885648.svg" /></a><span>This product uses the TMDB API but is not endorsed or certified by TMDB. Movie metadata and imagery: <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">The Movie Database</a>.</span></p></footer>
    </main>
   </div>
   {selected&&<FilmDetail film={selected} onClose={()=>setSelected(null)}/>}

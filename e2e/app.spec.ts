@@ -16,13 +16,6 @@ test('demo navigation, charts, library filters and PNG download',async({page})=>
  await expect(page.getByRole('dialog')).toBeVisible();
  await page.keyboard.press('Escape');
  await expect(page.getByRole('dialog')).toHaveCount(0);
- await navigate(page,'Discover');
- await expect(page.locator('main h2').first()).toContainText('Trending');
- await page.getByRole('button',{name:'TV Series',exact:true}).click();
- await page.getByRole('button',{name:'View Severance details',exact:true}).click();
- await expect(page.getByRole('dialog')).toContainText('Severance');
- await page.keyboard.press('Escape');
- await expect(page.getByRole('dialog')).toHaveCount(0);
  for(const name of ['Cast & crew','Cinematic DNA','Timeline','Your wrapped']){
   await navigate(page,name);
   await expect(page.locator('main h2').first()).toBeVisible();

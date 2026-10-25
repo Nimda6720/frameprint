@@ -49,4 +49,4 @@ export type DiscoveryItem = {
 };
 export type ImportResult = { films: Film[]; watchlistCount: number; warnings: string[]; fileNames: string[] };
 export type EnrichResult = { key: string; metadata: FilmMeta | null; reason?: string; retryable?: boolean };
-export type Screen = 'overview' | 'discover' | 'library' | 'people' | 'dna' | 'timeline' | 'wrapped';
+export type Screen = 'overview' | 'library' | 'people' | 'dna' | 'timeline' | 'wrapped';
