@@ -27,4 +27,14 @@ describe('Letterboxd import', () => {
  test('rejects missing film CSVs',()=>{
   expect(()=>importCsvFiles({'profile.csv':'Name\nJoe'})).toThrow(/No watched.csv/);
  });
+ test('imports IMDb ratings CSV exports and converts 1-10 ratings to 5-star scale',()=>{
+  const imdbCsv = 'Const,Your Rating,Date Rated,Title,URL,Title Type,IMDb Rating,Runtime (mins),Year,Genres,Num Votes,Release Date,Directors\ntt0816692,9,2025-03-15,Interstellar,https://www.imdb.com/title/tt0816692/,movie,8.7,169,2014,"Adventure, Drama, Sci-Fi",2000000,2014-11-05,Christopher Nolan\n';
+  const out = importCsvFiles({ 'imdb-ratings.csv': imdbCsv });
+  expect(out.films).toHaveLength(1);
+  expect(out.films[0].title).toBe('Interstellar');
+  expect(out.films[0].year).toBe(2014);
+  expect(out.films[0].rating).toBe(4.5);
+  expect(out.films[0].diaryDates).toEqual(['2025-03-15']);
+  expect(out.films[0].letterboxdUrl).toBe('https://www.imdb.com/title/tt0816692/');
+ });
 });

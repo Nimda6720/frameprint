@@ -22,6 +22,13 @@ function parseRating(value: string): number | null {
   const n = Number(value);
   return Number.isFinite(n) && n >= 0.5 && n <= 5 ? Math.round(n * 2) / 2 : null;
 }
+function parseImdbRating(value: string): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 1 && n <= 10 ? Math.round(n) / 2 : null;
+}
+function isImdbRow(row: Record<string, string>): boolean {
+  return ('Const' in row) || ('IMDb Rating' in row) || ('Your Rating' in row) || ('Title Type' in row);
+}
 function normalizeDate(value: string): string | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   if (numberYear(value.slice(0, 4)) === null) return null;
@@ -58,7 +65,7 @@ export function importCsvFiles(files: Record<string, string>): ImportResult {
       films.set(key, film);
     }
     const url = clean(row['Letterboxd URI'] || row.URL);
-    if (url.startsWith('https://letterboxd.com/')) film.letterboxdUrl = url;
+    if (url.startsWith('https://letterboxd.com/') || url.startsWith('https://www.imdb.com/')) film.letterboxdUrl = url;
     return film;
   }
   const watched = get('watched.csv');
@@ -69,7 +76,18 @@ export function importCsvFiles(files: Record<string, string>): ImportResult {
     ...names.filter(n => /(^|\/)likes\/films\.csv$/i.test(n) || ((watched.length || ratings.length || diary.length) && n.split('/').at(-1)?.toLowerCase() === 'films.csv')).flatMap(n => rows(files[n]))
   ];
   const watchlist = get('watchlist.csv');
-  if (!watched.length && !ratings.length && !diary.length && !likes.length && !watchlist.length) {
+  const standardSet = new Set(['watched.csv', 'ratings.csv', 'diary.csv', 'likes.csv', 'watchlist.csv', 'films.csv']);
+  const imdbRows = names
+    .filter(n => !standardSet.has(n.replace(/\\/g, '/').split('/').at(-1)?.toLowerCase() || ''))
+    .flatMap(n => {
+      try {
+        const parsed = rows(files[n]);
+        return parsed.length && isImdbRow(parsed[0]) ? parsed : [];
+      } catch {
+        return [];
+      }
+    });
+  if (!watched.length && !ratings.length && !diary.length && !likes.length && !watchlist.length && !imdbRows.length) {
     throw new Error('No watched.csv, ratings.csv or diary.csv found. Please export your Letterboxd data ZIP.');
   }
   for (const row of watched) {
@@ -80,7 +98,29 @@ export function importCsvFiles(files: Record<string, string>): ImportResult {
   }
   for (const row of ratings) {
     const f = upsert(row);
-    if (f) f.rating = parseRating(clean(row.Rating));
+    if (!f) continue;
+    if (isImdbRow(row)) {
+      const imdbRating = parseImdbRating(clean(row['Your Rating'])) ?? parseRating(clean(row.Rating));
+      if (imdbRating !== null) f.rating = imdbRating;
+      const ratedDate = normalizeDate(clean(row['Date Rated'] || row.Created));
+      if (ratedDate && !f.diaryDates.includes(ratedDate)) {
+        f.diaryDates.push(ratedDate);
+        processed++;
+      }
+    } else {
+      f.rating = parseRating(clean(row.Rating));
+    }
+  }
+  for (const row of imdbRows) {
+    const f = upsert(row);
+    if (!f) continue;
+    const imdbRating = parseImdbRating(clean(row['Your Rating'])) ?? parseRating(clean(row.Rating));
+    if (imdbRating !== null) f.rating = imdbRating;
+    const ratedDate = normalizeDate(clean(row['Date Rated'] || row.Created));
+    if (ratedDate && !f.diaryDates.includes(ratedDate)) {
+      f.diaryDates.push(ratedDate);
+      processed++;
+    }
   }
   for (const row of diary) {
     const f = upsert(row);
