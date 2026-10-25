@@ -141,11 +141,27 @@ export function importCsvFiles(files: Record<string, string>): ImportResult {
       : upsert(row);
     if (f) f.liked = true;
   }
+  if (films.size === 0 && watchlist.length > 0 && isImdbRow(watchlist[0])) {
+    for (const row of watchlist) {
+      const f = upsert(row);
+      if (!f) continue;
+      const imdbRating = parseImdbRating(clean(row['Your Rating'])) ?? parseRating(clean(row.Rating));
+      if (imdbRating !== null) f.rating = imdbRating;
+      const ratedDate = normalizeDate(clean(row['Date Rated'] || row.Created));
+      if (ratedDate && !f.diaryDates.includes(ratedDate)) {
+        f.diaryDates.push(ratedDate);
+        processed++;
+      }
+    }
+  }
   watchlistCount = watchlist.filter(r => clean(r.Name || r.Title)).length;
-  if (!watched.length) warnings.push('watched.csv was not found; the library was reconstructed from ratings and diary rows.');
-  if (!diary.length) warnings.push('No diary entries found. Watching timelines require dated diary entries.');
-  if (processed && !Array.from(films.values()).some(f => f.diaryDates.length)) warnings.push('Diary entries have no valid “Watched Date” fields. Logging dates are not treated as viewing dates.');
-  if (!ratings.length) warnings.push('No ratings.csv found. Ratings, if any, came from diary entries.');
+  const isImdbImport = imdbRows.length > 0 || (ratings.length > 0 && isImdbRow(ratings[0])) || (watchlist.length > 0 && isImdbRow(watchlist[0]));
+  if (!isImdbImport) {
+    if (!watched.length) warnings.push('watched.csv was not found; the library was reconstructed from ratings and diary rows.');
+    if (!diary.length) warnings.push('No diary entries found. Watching timelines require dated diary entries.');
+    if (processed && !Array.from(films.values()).some(f => f.diaryDates.length)) warnings.push('Diary entries have no valid “Watched Date” fields. Logging dates are not treated as viewing dates.');
+    if (!ratings.length) warnings.push('No ratings.csv found. Ratings, if any, came from diary entries.');
+  }
   return { films: Array.from(films.values()).sort((a, b) => a.title.localeCompare(b.title)), watchlistCount, warnings, fileNames: names };
 }
 export function mergeImportResults(existing: ImportResult, incoming: ImportResult): ImportResult {
