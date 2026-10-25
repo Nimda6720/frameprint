@@ -2,7 +2,7 @@ import type { ImportResult } from './types';
 
 // Keep decompression and CSV parsing off the UI thread. Termination also bounds
 // the time spent processing a hostile archive with misleading size headers.
-export function importInWorker(file: File): Promise<ImportResult> {
+export function importInWorker(file: File | File[]): Promise<ImportResult> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./import.worker.ts', import.meta.url), { type: 'module' });
     const cleanup = () => { clearTimeout(timer); worker.terminate(); };

@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { readFile } from 'node:fs/promises';
 import { describe, expect, test } from 'vitest';
-import { importLetterboxd, importCsvFiles, filmKey } from '../src/lib/import';
+import { importLetterboxd, importCsvFiles, mergeImportResults, filmKey } from '../src/lib/import';
 
 const watched = 'Date,Name,Year,Letterboxd URI\n2025-01-01,Arrival,2016,https://letterboxd.com/film/arrival-2016/\n';
 async function zipFile(files: Record<string,string>) {
@@ -18,6 +18,23 @@ describe('safe browser imports',()=>{
     expect(result.films.some(f=>f.diaryDates.length>0)).toBe(true);
   });
   test('reads a CSV directly',async()=>expect((await importLetterboxd(new File([watched],'watched.csv'))).films[0].title).toBe('Arrival'));
+  test('reads multiple CSV files selected together and merges incremental CSV uploads',async()=>{
+    const wFile = new File([watched], 'watched.csv');
+    const rFile = new File(['Name,Year,Rating\nArrival,2016,5\n'], 'ratings.csv');
+    const dFile = new File(['Name,Year,Watched Date,Rewatch\nArrival,2016,2025-02-14,Yes\n'], 'diary.csv');
+    const combined = await importLetterboxd([wFile, rFile, dFile]);
+    expect(combined.films).toHaveLength(1);
+    expect(combined.films[0].rating).toBe(5);
+    expect(combined.films[0].diaryDates).toEqual(['2025-02-14']);
+    expect(combined.warnings).toEqual([]);
+    const step1 = await importLetterboxd(wFile);
+    step1.films[0].metadata = { id: 329865, title: 'Arrival', year: 2016, poster: null, backdrop: null, overview: '', runtime: 116, genres: ['Science Fiction'], countries: ['United States'], language: 'en', cast: [], directors: [], writers: [], cinematographers: [], composers: [], tmdbRating: 7.6 };
+    const step2 = await importLetterboxd([rFile, dFile]);
+    const merged = mergeImportResults(step1, step2);
+    expect(merged.films[0].rating).toBe(5);
+    expect(merged.films[0].diaryDates).toEqual(['2025-02-14']);
+    expect(merged.films[0].metadata?.runtime).toBe(116);
+  });
   test('supports nested Letterboxd likes/films.csv',async()=>{
     const result=await importLetterboxd(await zipFile({'export/watched.csv':watched,'export/likes/films.csv':'Name,Year\nArrival,2016\n'}));
     expect(result.films[0].liked).toBe(true);

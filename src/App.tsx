@@ -8,6 +8,7 @@ import {
 import type { DiscoveryItem, Film, FilmMeta, ImportResult, Screen } from './lib/types';
 import type { PeopleCategory } from './lib/stats';
 import { importInWorker } from './lib/import-client';
+import { mergeImportResults } from './lib/import';
 import { demoDiscovery, demoFilms } from './data/demo';
 import { collaborations, getStats, minutesToLabel, prettyNumber, rankCountries, rankGenres, rankLanguages, rankPeople } from './lib/stats';
 import { enrichBatch, fetchMediaDetails, fetchTrending, hasApi, searchTmdb, waitFor } from './lib/enrich';
@@ -368,17 +369,46 @@ function Wrapped({films,demo}:{films:Film[];demo:boolean}) {
  <div className="wrapped-highlights"><div><span>FAVORITE FILM</span><strong>{favorite?.title||'No ratings yet'}</strong></div><div><span>HIGHEST-RATED MOVIES</span><strong>{stats.ratedFive} perfect 5★ ratings</strong></div><div><span>TOP DIRECTOR</span><strong>{directors[0]?.name||'Needs metadata'}</strong></div></div></div></div>
  </>;
 }
-function UploadDialog({onClose,onImport,busy,error}:{onClose:()=>void;onImport:(f:File)=>Promise<void>;busy:boolean;error:string|null}) {
- const [drag,setDrag]=useState(false); const fileInput=useRef<HTMLInputElement>(null);
+function UploadDialog({onClose,onImport,busy,error,canMerge,loadedFiles}:{onClose:()=>void;onImport:(files:File[],merge?:boolean)=>Promise<void>;busy:boolean;error:string|null;canMerge:boolean;loadedFiles:string[]}) {
+ const [drag,setDrag]=useState(false);
+ const [mergeMode,setMergeMode]=useState(false);
+ const mergeOverride=useRef(false);
+ const fileInput=useRef<HTMLInputElement>(null);
  return <div className="modal-scrim" onMouseDown={onClose}><section className="upload-dialog" role="dialog" aria-modal="true" aria-label="Import Letterboxd data" onMouseDown={e=>e.stopPropagation()}><button className="icon-btn modal-close" aria-label="Close upload" onClick={onClose}><X size={19}/></button>
- <div className="upload-logo"><UploadCloud size={27}/></div><div className="eyebrow">YOUR DATA, YOUR STORY</div><h2>Let's find your frameprint.</h2><p>Export your data from Letterboxd, then drop the ZIP file here. We'll do the rest.</p>
+ <div className="upload-logo"><UploadCloud size={27}/></div><div className="eyebrow">YOUR DATA, YOUR STORY</div><h2>Let's find your frameprint.</h2><p>Drop your Letterboxd <strong>.zip</strong> export, or select <strong>multiple .csv files at once</strong> (<code>watched.csv</code>, <code>ratings.csv</code>, <code>diary.csv</code>, <code>watchlist.csv</code>).</p>
  {error&&<div role="alert" className="upload-error">{error}</div>}
- <div className={`dropzone ${drag?'is-dragging':''}`} onDragEnter={e=>{e.preventDefault();setDrag(true)}} onDragOver={e=>e.preventDefault()} onDragLeave={e=>{e.preventDefault();setDrag(false)}} onDrop={e=>{e.preventDefault();setDrag(false);const f=e.dataTransfer.files[0];if(f)void onImport(f)}} onClick={()=>fileInput.current?.click()} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter'||e.key===' ')fileInput.current?.click()}}>
- <FolderOpen size={34}/><strong>{busy?'Reading your export…':'Drag & drop your Letterboxd export'}</strong><span>or click to browse files</span><small>ZIP export or a watched/ratings/diary CSV · Max 25 MB</small>
- <input ref={fileInput} type="file" hidden accept=".zip,.csv" onChange={e=>{const file=e.target.files?.[0];if(file)void onImport(file);e.target.value='';}}/></div>
- <div className="upload-steps"><span>01</span> Open <a href="https://letterboxd.com/settings/data/" target="_blank" rel="noopener noreferrer">Letterboxd → Data settings <ExternalLink size={12}/></a><span>02</span> Export Your Data <span>03</span> Upload ZIP here</div>
- <div className="privacy-line"><ShieldCheck size={17}/> We process your ZIP locally. Only movie titles and release years are sent for TMDB lookup.</div>
+ {canMerge&&<div className="upload-merge-bar">
+  <label className="upload-merge-toggle">
+   <input type="checkbox" checked={mergeMode} onChange={e=>{mergeOverride.current=e.target.checked;setMergeMode(e.target.checked);}}/>
+   <span>Merge with current library ({loadedFiles.length ? loadedFiles.map(f=>f.split('/').at(-1)).join(', ') : 'active import'})</span>
+  </label>
+  <button type="button" className="soft-btn btn-small" onClick={()=>{mergeOverride.current=true;setMergeMode(true);fileInput.current?.click();}}>+ Add & merge CSVs</button>
+ </div>}
+ <div className={`dropzone ${drag?'is-dragging':''}`} onDragEnter={e=>{e.preventDefault();setDrag(true)}} onDragOver={e=>e.preventDefault()} onDragLeave={e=>{e.preventDefault();setDrag(false)}} onDrop={e=>{e.preventDefault();setDrag(false);const list=Array.from(e.dataTransfer.files);if(list.length)void onImport(list,mergeOverride.current||mergeMode)}} onClick={()=>fileInput.current?.click()} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter'||e.key===' ')fileInput.current?.click()}}>
+ <FolderOpen size={34}/><strong>{busy?'Reading your export…':'Drag & drop your ZIP or multiple CSV files'}</strong><span>or click to select one or more files</span><small>ZIP export or multiple watched / ratings / diary / watchlist CSVs · Max 25 MB</small>
+ <input ref={fileInput} type="file" hidden multiple accept=".zip,.csv" onChange={e=>{const list=e.target.files?Array.from(e.target.files):[];const shouldMerge=mergeOverride.current||mergeMode;mergeOverride.current=false;if(list.length)void onImport(list,shouldMerge);e.target.value='';}}/></div>
+ <div className="upload-steps"><span>01</span> Open <a href="https://letterboxd.com/settings/data/" target="_blank" rel="noopener noreferrer">Letterboxd → Data settings <ExternalLink size={12}/></a><span>02</span> Export Your Data <span>03</span> Upload ZIP or CSVs</div>
+ <div className="privacy-line"><ShieldCheck size={17}/> We process your files locally. Only movie titles and release years are sent for TMDB lookup.</div>
  </section></div>;
+}
+const META_CACHE_KEY = 'frameprint.meta.v1';
+function loadCachedMeta(): Map<string, FilmMeta> {
+ try {
+  const raw = localStorage.getItem(META_CACHE_KEY);
+  if (!raw) return new Map();
+  const entries = JSON.parse(raw) as [string, FilmMeta][];
+  return new Map(Array.isArray(entries) ? entries : []);
+ } catch {
+  return new Map();
+ }
+}
+function saveCachedMeta(cache: Map<string, FilmMeta>) {
+ try {
+  const entries = Array.from(cache.entries()).slice(-2500);
+  localStorage.setItem(META_CACHE_KEY, JSON.stringify(entries));
+ } catch {
+  // Ignore storage quota errors
+ }
 }
 export default function App(){
  const [films,setFilms]=useState<Film[]>(demoFilms);
@@ -390,11 +420,13 @@ export default function App(){
  const [isImporting,setIsImporting]=useState(false);
  const [watchlistCount,setWatchlistCount]=useState(0);
  const [warnings,setWarnings]=useState<string[]>([]);
+ const [loadedFiles,setLoadedFiles]=useState<string[]>([]);
  const [error,setError]=useState<string|null>(null);
  const [enrich,setEnrich]=useState({running:false,done:0,total:0,message:''});
  const aborter=useRef<AbortController|null>(null);
  const importing=useRef(false);
  const attempted=useRef(new Set<string>());
+ const metaCache=useRef<Map<string,FilmMeta>>(loadCachedMeta());
  const filmsRef=useRef(films);
  useEffect(()=>{filmsRef.current=films;},[films]);
  useEffect(()=>()=>aborter.current?.abort(),[]);
@@ -405,35 +437,60 @@ export default function App(){
   aborter.current?.abort();const controller=new AbortController();aborter.current=controller;
   const queue=input.filter(f=>!f.metadata&&!attempted.current.has(f.key));
   if(!queue.length) return;
+  const BATCH_SIZE=24;
+  const PARALLEL_BATCHES=2;
   setEnrich({running:true,done:0,total:queue.length,message:'Matching films with TMDB…'});
   try{
-   for(let pos=0;pos<queue.length;pos+=8){
+   let completed=0;
+   for(let pos=0;pos<queue.length;pos+=BATCH_SIZE*PARALLEL_BATCHES){
     if(controller.signal.aborted)break;
-    const batch=queue.slice(pos,pos+8);
-    const items=await enrichBatch(batch,controller.signal);
+    const wave:Film[][]=[];
+    for(let b=0;b<PARALLEL_BATCHES;b++){
+     const slice=queue.slice(pos+b*BATCH_SIZE,pos+(b+1)*BATCH_SIZE);
+     if(slice.length)wave.push(slice);
+    }
+    const waveResults=await Promise.all(wave.map(batch=>enrichBatch(batch,controller.signal)));
     if(controller.signal.aborted)break;
+    const items=waveResults.flat();
     const map=new Map(items.map(x=>[x.key,x]));
-    for(const item of items)if(!item.retryable)attempted.current.add(item.key);
+    let cacheUpdated=false;
+    for(const item of items){
+     if(!item.retryable)attempted.current.add(item.key);
+     if(item.metadata){metaCache.current.set(item.key,item.metadata);cacheUpdated=true;}
+    }
+    if(cacheUpdated)saveCachedMeta(metaCache.current);
+    completed+=wave.reduce((sum,b)=>sum+b.length,0);
     setFilms(old=>{const newer=old.map(f=>{const found=map.get(f.key);return found?.metadata?{...f,metadata:found.metadata}:f;});filmsRef.current=newer;return newer;});
-    setEnrich({running:true,done:pos+batch.length,total:queue.length,message:'Building your cinematic portrait…'});
-    if(pos+8<queue.length)await waitFor(3100,controller.signal);
+    setEnrich({running:true,done:Math.min(completed,queue.length),total:queue.length,message:'Building your cinematic portrait…'});
+    if(pos+BATCH_SIZE*PARALLEL_BATCHES<queue.length)await waitFor(120,controller.signal);
    }
    if(!controller.signal.aborted)setEnrich(old=>({...old,running:false,message:'Metadata pass complete.'}));
   }catch(e){if(controller.signal.aborted)return;setError((e as Error).message);setEnrich(old=>({...old,running:false,message:'Enrichment paused. Resume when ready.'}));}
  },[]);
- const onImport=async(file:File)=>{
+ const onImport=async(input:File|File[],merge=false)=>{
   if(importing.current)return;
+  const fileList=Array.isArray(input)?input:[input];
+  if(!fileList.length)return;
   importing.current=true;
   setIsImporting(true);setError(null);aborter.current?.abort();
   setEnrich(old=>({...old,running:false}));
   try{
-   const parsed:ImportResult=await importInWorker(file);
-   attempted.current.clear();filmsRef.current=parsed.films;setFilms(parsed.films);setWarnings(parsed.warnings);setWatchlistCount(parsed.watchlistCount);setDemo(false);setSelected(null);setScreen('overview');setUploadOpen(false);setNavOpen(false);
+   const incoming:ImportResult=await importInWorker(fileList.length===1?fileList[0]:fileList);
+   const parsed:ImportResult=(!demo&&merge)
+    ? mergeImportResults({films:filmsRef.current,watchlistCount,warnings,fileNames:loadedFiles},incoming)
+    : incoming;
+   const hydratedFilms=parsed.films.map(f=>{
+    if(f.metadata)return f;
+    const cached=metaCache.current.get(f.key);
+    return cached?{...f,metadata:cached}:f;
+   });
+   if(demo||!merge)attempted.current.clear();
+   filmsRef.current=hydratedFilms;setFilms(hydratedFilms);setWarnings(parsed.warnings);setWatchlistCount(parsed.watchlistCount);setLoadedFiles(parsed.fileNames);setDemo(false);setSelected(null);setScreen('overview');setUploadOpen(false);setNavOpen(false);
    setEnrich({running:false,done:0,total:0,message:''});
-   if(hasApi)void runEnrich(parsed.films);
+   if(hasApi)void runEnrich(hydratedFilms);
   }catch(e){setError((e as Error).message)}finally{importing.current=false;setIsImporting(false)}
  };
- const resetDemo=()=>{aborter.current?.abort();attempted.current.clear();setDemo(true);setWatchlistCount(0);setSelected(null);setFilms(demoFilms);filmsRef.current=demoFilms;setScreen('overview');setError(null);setWarnings([]);setEnrich({running:false,done:0,total:0,message:''});};
+ const resetDemo=()=>{aborter.current?.abort();attempted.current.clear();setDemo(true);setWatchlistCount(0);setLoadedFiles([]);setSelected(null);setFilms(demoFilms);filmsRef.current=demoFilms;setScreen('overview');setError(null);setWarnings([]);setEnrich({running:false,done:0,total:0,message:''});};
  const remaining=films.filter(f=>!f.metadata&&!attempted.current.has(f.key)).length;
  const downloadData=()=>{
   const data={source:'Frameprint',demo,generatedAt:new Date().toISOString(),stats,topGenres:rankGenres(films),topDirectors:rankPeople(films,'directors'),films};
@@ -464,6 +521,6 @@ export default function App(){
    </main>
   </div>
   {selected&&<FilmDetail film={selected} onClose={()=>setSelected(null)}/>}
-  {uploadOpen&&<UploadDialog onClose={()=>setUploadOpen(false)} onImport={onImport} busy={isImporting} error={error}/>}
+  {uploadOpen&&<UploadDialog onClose={()=>setUploadOpen(false)} onImport={onImport} busy={isImporting} error={error} canMerge={!demo} loadedFiles={loadedFiles}/>}
  </div>;
 }

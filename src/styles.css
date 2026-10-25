@@ -23,6 +23,9 @@
 .tmdb-credit{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tmdb-credit img{object-fit:contain;display:block}.tmdb-credit span{flex:1;min-width:240px}
 
 .upload-error{margin:15px 0;padding:12px 14px;border:1px solid #8c4c4c;border-radius:9px;background:#3c2225;color:#ffd8d8;font-size:13px;line-height:1.45}
+.upload-merge-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:#1a2b25;border:1px solid #395443;border-radius:10px;padding:10px 13px;margin-bottom:14px;text-align:left}
+.upload-merge-toggle{display:flex;align-items:center;gap:8px;font-size:11px;color:#cde0c9;cursor:pointer;flex:1;min-width:180px}
+.upload-merge-toggle input{accent-color:var(--lime);width:15px;height:15px;cursor:pointer}
 
 .media-badge{position:absolute;top:9px;right:9px;z-index:3;font:800 8px 'DM Sans',sans-serif;letter-spacing:1.1px;padding:4px 7px;border-radius:5px;backdrop-filter:blur(6px);border:1px solid #ffffff26;color:#f5f9ef;background:#0e191dd9}
 .media-tv{background:#1d352dd9;border-color:#85b6aa66;color:#b8efe0}

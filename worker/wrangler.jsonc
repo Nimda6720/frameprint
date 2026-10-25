@@ -8,6 +8,6 @@
     "ALLOWED_ORIGINS": "https://nimda6720.github.io,http://localhost:5173"
   },
   "ratelimits": [
-    { "name": "API_RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } }
+    { "name": "API_RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } }
   ]
 }
