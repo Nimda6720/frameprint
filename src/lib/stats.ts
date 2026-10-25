@@ -90,3 +90,245 @@ export function getStats(films: Film[]) {
     sortedFavorites: films.filter(f => f.rating !== null).sort((a,b) => (b.rating || 0) - (a.rating || 0) || a.title.localeCompare(b.title)),
   };
 }
+
+export function getAvailableYears(films: Film[]): string[] {
+  const years = new Set<string>();
+  for (const film of films) {
+    for (const d of film.diaryDates) {
+      if (d && d.length >= 4) years.add(d.slice(0, 4));
+    }
+    if (!film.diaryDates.length && film.dateAdded && film.dateAdded.length >= 4) {
+      years.add(film.dateAdded.slice(0, 4));
+    }
+  }
+  return [...years].sort((a, b) => b.localeCompare(a));
+}
+
+export function filterFilmsByYear(films: Film[], year: string): Film[] {
+  if (!year || year === 'All time') return films;
+  const filtered: Film[] = [];
+  for (const film of films) {
+    const matchingDates = film.diaryDates.filter(d => d.startsWith(`${year}-`));
+    if (matchingDates.length > 0) {
+      filtered.push({ ...film, diaryDates: matchingDates });
+    } else if (!film.diaryDates.length && film.dateAdded?.startsWith(`${year}-`)) {
+      filtered.push(film);
+    }
+  }
+  return filtered;
+}
+
+export interface HeatmapDay {
+  date: string;
+  count: number;
+  titles: string[];
+  level: 0 | 1 | 2 | 3 | 4;
+}
+
+export interface HeatmapStats {
+  year: string;
+  availableYears: string[];
+  days: HeatmapDay[];
+  activeDays: number;
+  longestStreak: number;
+  currentStreak: number;
+  totalLogs: number;
+  rewatches: number;
+  busiestDay: { date: string; count: number; titles: string[] } | null;
+}
+
+export function getHeatmapAndStreaks(films: Film[], preferredYear?: string): HeatmapStats {
+  const availableYears = getAvailableYears(films);
+  const targetYear = (preferredYear && preferredYear !== 'All time' && availableYears.includes(preferredYear))
+    ? preferredYear
+    : (availableYears[0] || String(new Date().getUTCFullYear()));
+  const byDate = new Map<string, { count: number; titles: string[] }>();
+  const allLoggedDates = new Set<string>();
+  let rewatches = 0;
+
+  for (const film of films) {
+    const matchesTarget = !preferredYear || preferredYear === 'All time'
+      ? film.diaryDates.some(d => d.startsWith(`${targetYear}-`))
+      : true;
+    if (matchesTarget && film.rewatches > 0) rewatches += film.rewatches;
+    for (const date of film.diaryDates) {
+      if (!date) continue;
+      allLoggedDates.add(date);
+      if (date.startsWith(`${targetYear}-`)) {
+        let entry = byDate.get(date);
+        if (!entry) { entry = { count: 0, titles: [] }; byDate.set(date, entry); }
+        entry.count++;
+        if (!entry.titles.includes(film.title)) entry.titles.push(film.title);
+      }
+    }
+  }
+
+  // Compute streaks across the selected scope (or targetYear)
+  const streakDates = [...allLoggedDates]
+    .filter(d => !preferredYear || preferredYear === 'All time' ? true : d.startsWith(`${preferredYear}-`))
+    .sort();
+  let longestStreak = 0;
+  let currentRun = 0;
+  let prevTime: number | null = null;
+  for (const d of streakDates) {
+    const t = new Date(`${d}T12:00:00Z`).getTime();
+    if (prevTime !== null && Math.round((t - prevTime) / 86400000) === 1) {
+      currentRun++;
+    } else {
+      currentRun = 1;
+    }
+    if (currentRun > longestStreak) longestStreak = currentRun;
+    prevTime = t;
+  }
+
+  const start = new Date(`${targetYear}-01-01T12:00:00Z`);
+  const end = new Date(`${targetYear}-12-31T12:00:00Z`);
+  const days: HeatmapDay[] = [];
+  let busiestDay: { date: string; count: number; titles: string[] } | null = null;
+  let totalLogs = 0;
+
+  for (let cur = new Date(start); cur <= end; cur.setUTCDate(cur.getUTCDate() + 1)) {
+    const iso = cur.toISOString().slice(0, 10);
+    const info = byDate.get(iso);
+    const count = info?.count ?? 0;
+    const titles = info?.titles ?? [];
+    totalLogs += count;
+    if (count > 0 && (!busiestDay || count > busiestDay.count)) {
+      busiestDay = { date: iso, count, titles };
+    }
+    const level: 0 | 1 | 2 | 3 | 4 = count === 0 ? 0 : count === 1 ? 1 : count === 2 ? 2 : count === 3 ? 3 : 4;
+    days.push({ date: iso, count, titles, level });
+  }
+
+  return {
+    year: targetYear,
+    availableYears,
+    days,
+    activeDays: byDate.size,
+    longestStreak,
+    currentStreak: currentRun,
+    totalLogs,
+    rewatches,
+    busiestDay,
+  };
+}
+
+export interface PersonProfileData {
+  name: string;
+  id?: number;
+  category: PeopleCategory;
+  profile?: string | null;
+  count: number;
+  average: number | null;
+  highestRated: Film | null;
+  watchedFilms: Film[];
+  collaborators: { name: string; role: string; count: number }[];
+}
+
+export function getPersonProfile(films: Film[], item: RankedItem, category: PeopleCategory): PersonProfileData {
+  const watchedFilms = films.filter(f => {
+    const list = f.metadata?.[category] ?? [];
+    return list.some(p => (item.id !== undefined && p.id === item.id) || p.name.toLowerCase() === item.name.toLowerCase());
+  }).sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1) || (b.year ?? 0) - (a.year ?? 0));
+
+  const highestRated = watchedFilms.find(f => f.rating !== null) ?? watchedFilms[0] ?? null;
+  const collabMap = new Map<string, { name: string; role: string; count: number }>();
+
+  for (const film of watchedFilms) {
+    const m = film.metadata;
+    if (!m) continue;
+    const candidates: { person: Person; role: string }[] = [
+      ...m.directors.map(person => ({ person, role: 'Director' })),
+      ...m.cast.slice(0, 8).map(person => ({ person, role: 'Actor' })),
+      ...m.writers.slice(0, 4).map(person => ({ person, role: 'Writer' })),
+      ...m.cinematographers.slice(0, 2).map(person => ({ person, role: 'Cinematographer' })),
+      ...m.composers.slice(0, 2).map(person => ({ person, role: 'Composer' })),
+    ];
+    const seenInFilm = new Set<string>();
+    for (const { person, role } of candidates) {
+      if ((item.id !== undefined && person.id === item.id) || person.name.toLowerCase() === item.name.toLowerCase()) continue;
+      const key = `${person.id || person.name.toLowerCase()}`;
+      if (seenInFilm.has(key)) continue;
+      seenInFilm.add(key);
+      let existing = collabMap.get(key);
+      if (!existing) {
+        existing = { name: person.name, role, count: 0 };
+        collabMap.set(key, existing);
+      }
+      existing.count++;
+    }
+  }
+
+  const collaborators = [...collabMap.values()]
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, 6);
+
+  return {
+    name: item.name,
+    id: item.id,
+    category,
+    profile: item.profile,
+    count: watchedFilms.length,
+    average: item.average,
+    highestRated,
+    watchedFilms,
+    collaborators,
+  };
+}
+
+export interface CinemaPersonality {
+  title: string;
+  subtitle: string;
+  description: string;
+  traits: string[];
+}
+
+export function getCinemaPersonality(films: Film[]): CinemaPersonality {
+  const stats = getStats(films);
+  const genres = rankGenres(films);
+  const languages = rankLanguages(films);
+  const directors = rankPeople(films, 'directors');
+  const topGenre = genres[0]?.name || 'Cinema';
+  const topDirector = directors[0]?.name || 'visionary auteurs';
+  const nonEnglishShare = languages.filter(l => l.name.toLowerCase() !== 'en').reduce((acc, l) => acc + l.count, 0) / Math.max(1, stats.metadataCount);
+  const avg = stats.avgRating ?? 3.8;
+
+  if (nonEnglishShare >= 0.35) {
+    return {
+      title: 'The Global Arthouse Explorer',
+      subtitle: 'SUBTITLES ARE YOUR SECOND LANGUAGE',
+      description: `Your archive crosses borders effortlessly, gravitating toward ${topGenre.toLowerCase()} storytelling and the distinct voice of ${topDirector}.`,
+      traits: [`${languages.length} original languages`, `Signature: ${topGenre}`, `Auteur affinity: ${topDirector}`],
+    };
+  }
+  if (topGenre === 'Science Fiction' || topGenre === 'Fantasy') {
+    return {
+      title: 'The Speculative Worldbuilder',
+      subtitle: 'DRAWN TO HORIZONS BEYOND REALITY',
+      description: `You seek out immersive universes, grand visual scale, and philosophical ${topGenre.toLowerCase()} anchored by ${topDirector}.`,
+      traits: [`Top genre: ${topGenre}`, `${minutesToLabel(stats.knownRuntime)} screen time`, `Guided by ${topDirector}`],
+    };
+  }
+  if (avg >= 4.25) {
+    return {
+      title: 'The Devoted Auteurist',
+      subtitle: 'CURATOR OF MODERN MASTERPIECES',
+      description: `You know exactly what moves you—selective, generous with great craft (${avg.toFixed(2)}★ avg), and anchored by ${topGenre} and ${topDirector}.`,
+      traits: [`${stats.ratedFive} perfect 5★ ratings`, `Top genre: ${topGenre}`, `Top director: ${topDirector}`],
+    };
+  }
+  if (avg <= 3.3 && stats.rated >= 5) {
+    return {
+      title: 'The Unsparing Critic',
+      subtitle: 'FIVE STARS MUST BE EARNED',
+      description: `You hold cinema to a rigorous standard (${avg.toFixed(2)}★ avg), rewarding only the sharpest ${topGenre.toLowerCase()} and boldest direction from ${topDirector}.`,
+      traits: [`${avg.toFixed(2)}★ average rating`, `Primary lens: ${topGenre}`, `Most watched: ${topDirector}`],
+    };
+  }
+  return {
+    title: 'The Midnight Storyteller',
+    subtitle: 'CHASING ATMOSPHERE, CHARACTER & CRAFT',
+    description: `From intimate character studies to tension-filled ${topGenre.toLowerCase()}, your taste is defined by emotional resonance and directors like ${topDirector}.`,
+    traits: [`Signature genre: ${topGenre}`, `${stats.total} films archived`, `Top auteur: ${topDirector}`],
+  };
+}

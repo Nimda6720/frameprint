@@ -9,6 +9,13 @@ test('demo navigation, charts, library filters and PNG download',async({page})=>
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('./');
  await expect(page.getByRole('heading',{name:/Every film tells/})).toBeVisible();
+ await expect(page.locator('.heatmap-panel')).toBeVisible();
+ await expect(page.locator('.recommendations-panel')).toBeVisible();
+ const yearSelect=page.getByLabel('Filter dashboard by year');
+ await expect(yearSelect).toBeVisible();
+ await yearSelect.selectOption('2025');
+ await expect(yearSelect).toHaveValue('2025');
+ await yearSelect.selectOption('All time');
  await navigate(page,'Film library');
  await page.getByRole('textbox',{name:'Search films'}).fill('inception');
  await expect(page.locator('.library-item')).toHaveCount(1);
@@ -16,10 +23,18 @@ test('demo navigation, charts, library filters and PNG download',async({page})=>
  await expect(page.getByRole('dialog')).toBeVisible();
  await page.keyboard.press('Escape');
  await expect(page.getByRole('dialog')).toHaveCount(0);
- for(const name of ['Cast & crew','Cinematic DNA','Timeline','Your wrapped']){
+ await navigate(page,'Cast & crew');
+ await page.locator('.person-card-interactive').first().click();
+ await expect(page.getByRole('dialog')).toBeVisible();
+ await page.keyboard.press('Escape');
+ await expect(page.getByRole('dialog')).toHaveCount(0);
+ for(const name of ['Cinematic DNA','Timeline','Your wrapped']){
   await navigate(page,name);
   await expect(page.locator('main h2').first()).toBeVisible();
  }
+ await page.getByRole('tab',{name:'05 · Cinema Personality'}).click();
+ await expect(page.locator('.wrapped-card')).toContainText('CINEMA PERSONALITY');
+ await page.getByRole('tab',{name:'01 · Total Watching'}).click();
  const downloadPromise=page.waitForEvent('download');
  await page.getByRole('button',{name:'Download share card'}).click();
  const download=await downloadPromise;
